@@ -1,0 +1,43 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gesturelight"
+version = "0.1.0"
+description = "Webcam hand-tracking foundation for the GestureLight project."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    # 0.10.21 retains MediaPipe's documented ``mp.solutions.hands`` API.
+    # Later 0.10 releases removed that API in favor of the Tasks interface.
+    "mediapipe==0.10.21",
+    "numpy>=1.26,<3",
+    # MediaPipe depends on this distribution; it provides the cv2 module and
+    # avoids installing both the standard and contrib OpenCV wheels.
+    "opencv-contrib-python>=4.10,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.8,<1",
+]
+
+[project.scripts]
+gesturelight-hand-tracker = "gesturelight.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = ["-ra", "--strict-markers"]
+markers = [
+    "manual: requires a physical webcam and manual observation",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

@@ -1,0 +1,17 @@
+# Python build and test artifacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+*.egg-info/
+
+# Local environment created by uv
+.venv/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+
