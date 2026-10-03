@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "gesturelight"
 version = "0.1.0"
-description = "Webcam hand-tracking foundation for the GestureLight project."
+description = "Webcam hand tracking and local-Wi-Fi ESP32 lamp control for GestureLight."
 readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [

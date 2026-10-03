@@ -1,15 +1,47 @@
 {
-  description = "GestureLight webcam hand-tracking development environment";
+  description = "GestureLight webcam hand-tracking and local lamp-control application";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
-  outputs = { self, nixpkgs }:
+    pyproject-nix = {
+      url = "github:pyproject-nix/pyproject.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    uv2nix = {
+      url = "github:pyproject-nix/uv2nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+    };
+    pyproject-build-systems = {
+      url = "github:pyproject-nix/build-system-pkgs";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.pyproject-nix.follows = "pyproject-nix";
+      inputs.uv2nix.follows = "uv2nix";
+    };
+  };
+
+  outputs = {
+    self,
+    nixpkgs,
+    pyproject-nix,
+    uv2nix,
+    pyproject-build-systems,
+    ...
+  }:
     let
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" ];
-      forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
+      inherit (nixpkgs) lib;
+      developmentSystems = [ "x86_64-linux" "aarch64-linux" ];
+      packageSystems = [ "x86_64-linux" ];
+      forAllDevelopmentSystems = lib.genAttrs developmentSystems;
+      forAllPackageSystems = lib.genAttrs packageSystems;
+
+      # Read the uv lockfile once. The package output below uses its Linux
+      # wheels, while the development shell continues to use uv directly.
+      workspace = uv2nix.lib.workspace.loadWorkspace { workspaceRoot = ./.; };
     in
     {
-      devShells = forAllSystems (system:
+      devShells = forAllDevelopmentSystems (system:
         let
           pkgs = import nixpkgs { inherit system; };
           python = pkgs.python311;
@@ -46,6 +78,92 @@
             QT_QPA_PLATFORM = "xcb";
             UV_NO_MANAGED_PYTHON = "1";
             UV_PYTHON = "${python}/bin/python";
+          };
+        });
+
+      # MediaPipe 0.10.21, which retains the required mp.solutions.hands API,
+      # has a locked Linux wheel only for x86_64. Do not advertise an ARM
+      # package that cannot be built from this lockfile.
+      packages = forAllPackageSystems (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          python = pkgs.python311;
+          runtimeLibraries = with pkgs; [
+            stdenv.cc.cc.lib
+            zlib
+            libGL
+            glib
+            libxkbcommon
+            libx11
+            libxcb
+            libxcursor
+            libxext
+            libICE
+            libxi
+            libxrandr
+            libxrender
+            libSM
+          ];
+          runtimeLibraryPath = pkgs.lib.makeLibraryPath runtimeLibraries;
+
+          pythonSet = (pkgs.callPackage pyproject-nix.build.packages { inherit python; }).overrideScope (
+            lib.composeManyExtensions [
+              pyproject-build-systems.overlays.wheel
+              (workspace.mkPyprojectOverlay { sourcePreference = "wheel"; })
+            ]
+          );
+          inherit (pkgs.callPackages pyproject-nix.build.util { }) mkApplication;
+
+          desktopItem = pkgs.makeDesktopItem {
+            name = "gesturelight";
+            desktopName = "GestureLight";
+            genericName = "Gesture-controlled lamp";
+            comment = "Control a local ESP32 lamp with webcam hand gestures";
+            exec = "@gesturelight-bin@";
+            categories = [ "AudioVideo" "Video" ];
+            terminal = false;
+          };
+
+          gesturelight = (mkApplication {
+            venv = pythonSet.mkVirtualEnv "gesturelight-env" workspace.deps.default;
+            package = pythonSet.gesturelight;
+          }).overrideAttrs (old: {
+            nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.makeWrapper ];
+            postInstall = (old.postInstall or "") + ''
+              install -Dm444 ${desktopItem}/share/applications/gesturelight.desktop \
+                "$out/share/applications/gesturelight.desktop"
+              substituteInPlace "$out/share/applications/gesturelight.desktop" \
+                --replace-fail '@gesturelight-bin@' "$out/bin/gesturelight-hand-tracker"
+              wrapProgram "$out/bin/gesturelight-hand-tracker" \
+                --set QT_QPA_PLATFORM xcb \
+                --prefix LD_LIBRARY_PATH : ${runtimeLibraryPath}
+            '';
+            meta = (old.meta or { }) // {
+              description = "Webcam hand tracking and local ESP32 lamp control";
+              mainProgram = "gesturelight-hand-tracker";
+              platforms = [ "x86_64-linux" ];
+            };
+          });
+        in
+        {
+          inherit gesturelight;
+          default = gesturelight;
+        });
+
+      apps = forAllPackageSystems (system:
+        let
+          program = "${self.packages.${system}.gesturelight}/bin/gesturelight-hand-tracker";
+        in
+        {
+          gesturelight = {
+            type = "app";
+            inherit program;
+            meta.description = "GestureLight webcam hand-tracking and local lamp-control app";
+          };
+          default = {
+            type = "app";
+            inherit program;
+            meta.description = "GestureLight webcam hand-tracking and local lamp-control app";
           };
         });
     };

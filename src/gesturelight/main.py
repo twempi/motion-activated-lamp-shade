@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import time
 from collections.abc import Sequence
-from dataclasses import dataclass
+from contextlib import nullcontext
+from dataclasses import dataclass, field
 from typing import Any
 
 from gesturelight import camera as camera_module
@@ -19,6 +21,13 @@ from gesturelight.camera import (
     CameraError,
     Frame,
 )
+from gesturelight.gesture_classifier import (
+    DEFAULT_BRIGHTNESS_STEP_RATIO,
+    DEFAULT_PINCH_DISTANCE_RATIO,
+    HandGestureConfig,
+    HandGestureController,
+    LampGestureAction,
+)
 from gesturelight.hand_tracker import (
     DEFAULT_MAX_NUM_HANDS,
     DEFAULT_MIN_DETECTION_CONFIDENCE,
@@ -28,6 +37,12 @@ from gesturelight.hand_tracker import (
     HandTrackerConfig,
     HandTrackerError,
     HandTrackingResult,
+)
+from gesturelight.lamp_controller import (
+    DEFAULT_HTTP_TIMEOUT_SECONDS,
+    LampController,
+    LampControllerConfig,
+    LampControllerError,
 )
 
 logger = logging.getLogger(__name__)
@@ -59,6 +74,8 @@ class ApplicationConfig:
     tracker: HandTrackerConfig
     mirror: bool = True
     camera_only: bool = False
+    lamp: LampControllerConfig | None = None
+    gesture: HandGestureConfig = field(default_factory=HandGestureConfig)
     log_level: str = DEFAULT_LOG_LEVEL
 
 
@@ -156,6 +173,33 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Show only the webcam/FPS diagnostic; do not start MediaPipe.",
     )
     parser.add_argument(
+        "--esp32-url",
+        metavar="URL",
+        help=(
+            "ESP32 local Wi-Fi URL, for example http://192.168.1.50. Enables lamp control. "
+            "Defaults to $GESTURELIGHT_ESP32_URL when it is set."
+        ),
+    )
+    parser.add_argument(
+        "--esp32-timeout",
+        type=float,
+        default=DEFAULT_HTTP_TIMEOUT_SECONDS,
+        help="ESP32 HTTP timeout in seconds (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--pinch-distance-ratio",
+        type=float,
+        default=DEFAULT_PINCH_DISTANCE_RATIO,
+        help="Maximum thumb/index touch distance as a fraction of palm size "
+        "(default: %(default)s).",
+    )
+    parser.add_argument(
+        "--brightness-step-ratio",
+        type=float,
+        default=DEFAULT_BRIGHTNESS_STEP_RATIO,
+        help="Pinch-and-move distance per brightness button press (default: %(default)s).",
+    )
+    parser.add_argument(
         "--log-level",
         choices=("DEBUG", "INFO", "WARNING", "ERROR"),
         default=DEFAULT_LOG_LEVEL,
@@ -168,6 +212,13 @@ def parse_args(arguments: Sequence[str] | None = None) -> ApplicationConfig:
     """Parse and validate command-line arguments into typed application settings."""
     parser = build_argument_parser()
     args = parser.parse_args(arguments)
+    if args.camera_only and args.esp32_url is not None:
+        parser.error("--camera-only cannot be used with --esp32-url.")
+    esp32_url = (
+        args.esp32_url if args.esp32_url is not None else os.environ.get("GESTURELIGHT_ESP32_URL")
+    )
+    if args.camera_only:
+        esp32_url = None
     try:
         return ApplicationConfig(
             camera=CameraConfig(
@@ -184,6 +235,18 @@ def parse_args(arguments: Sequence[str] | None = None) -> ApplicationConfig:
             ),
             mirror=args.mirror,
             camera_only=args.camera_only,
+            lamp=(
+                LampControllerConfig(
+                    base_url=esp32_url,
+                    timeout_seconds=args.esp32_timeout,
+                )
+                if esp32_url
+                else None
+            ),
+            gesture=HandGestureConfig(
+                pinch_distance_ratio=args.pinch_distance_ratio,
+                brightness_step_ratio=args.brightness_step_ratio,
+            ),
             log_level=args.log_level,
         )
     except ValueError as error:
@@ -199,7 +262,11 @@ def configure_logging(log_level: str) -> None:
     )
 
 
-def build_debug_lines(fps: float, tracking_result: HandTrackingResult | None) -> tuple[str, ...]:
+def build_debug_lines(
+    fps: float,
+    tracking_result: HandTrackingResult | None,
+    lamp_control_enabled: bool = False,
+) -> tuple[str, ...]:
     """Create UI diagnostic text without coupling it to OpenCV calls."""
     if tracking_result is None:
         return (
@@ -222,6 +289,13 @@ def build_debug_lines(fps: float, tracking_result: HandTrackingResult | None) ->
         else:
             handedness.append(f"{hand.handedness} ({hand.handedness_confidence:.2f})")
     lines.append(f"Handedness: {', '.join(handedness) if handedness else 'n/a'}")
+    if lamp_control_enabled:
+        lines.extend(
+            (
+                "Power: close fist, then open hand",
+                "Brightness: pinch thumb + index, move hand up/down",
+            )
+        )
     return tuple(lines)
 
 
@@ -231,16 +305,20 @@ def run(config: ApplicationConfig) -> int:
     if opencv is None:
         logger.error("OpenCV is not installed. Enter the Nix shell and run 'uv sync'.")
         return 1
+    if config.camera_only and config.lamp is not None:
+        logger.error("Camera-only mode cannot be combined with ESP32 Wi-Fi control.")
+        return 1
 
     try:
-        with Camera(config.camera) as camera:
+        lamp_context = LampController(config.lamp) if config.lamp is not None else nullcontext(None)
+        with lamp_context as lamp_controller, Camera(config.camera) as camera:
             if config.camera_only:
                 logger.info("Starting webcam-only diagnostic mode.")
-                return _run_preview_loop(camera, None, config, opencv)
+                return _run_preview_loop(camera, None, config, opencv, lamp_controller)
 
             with HandTracker(config.tracker) as tracker:
-                return _run_preview_loop(camera, tracker, config, opencv)
-    except (CameraError, HandTrackerError) as error:
+                return _run_preview_loop(camera, tracker, config, opencv, lamp_controller)
+    except (CameraError, HandTrackerError, LampControllerError) as error:
         logger.error("GestureLight could not continue: %s", error)
         logger.debug("Detailed startup or processing error:", exc_info=True)
         return 1
@@ -260,11 +338,15 @@ def _run_preview_loop(
     tracker: HandTracker | None,
     config: ApplicationConfig,
     opencv: Any,
+    lamp_controller: LampController | None,
 ) -> int:
     """Continuously capture, optionally track hands, and display diagnostics."""
     opencv.namedWindow(WINDOW_TITLE, opencv.WINDOW_NORMAL)
     frame_rate_meter = FrameRateMeter()
     previous_hand_count: int | None = None
+    gesture_controller = (
+        HandGestureController(config.gesture) if lamp_controller is not None else None
+    )
 
     while True:
         frame = camera.read()
@@ -284,11 +366,32 @@ def _run_preview_loop(
             if tracking_result.hand_count != previous_hand_count:
                 logger.info("Hand detection changed: %s hand(s).", tracking_result.hand_count)
                 previous_hand_count = tracking_result.hand_count
+            if gesture_controller is not None:
+                action = gesture_controller.update(tracking_result)
+                if action is LampGestureAction.POWER:
+                    lamp_controller.press_power_button()
+                    logger.info("Fist-to-open gesture accepted; power-button Wi-Fi command sent.")
+                elif action is LampGestureAction.BRIGHTNESS_UP:
+                    lamp_controller.press_brightness_up_button()
+                    logger.info("Pinch-and-up gesture accepted; brightness-up Wi-Fi command sent.")
+                elif action is LampGestureAction.BRIGHTNESS_DOWN:
+                    lamp_controller.press_brightness_down_button()
+                    logger.info(
+                        "Pinch-and-down gesture accepted; brightness-down Wi-Fi command sent."
+                    )
 
         # This time delta includes capture, model inference, rendering, and the
         # previous event wait, so it describes the actual displayed loop rate.
         fps = frame_rate_meter.update(time.perf_counter())
-        _draw_debug_overlay(frame, build_debug_lines(fps, tracking_result), opencv)
+        _draw_debug_overlay(
+            frame,
+            build_debug_lines(
+                fps,
+                tracking_result,
+                lamp_control_enabled=lamp_controller is not None,
+            ),
+            opencv,
+        )
         opencv.imshow(WINDOW_TITLE, frame)
 
         pressed_key = opencv.waitKey(KEY_POLL_DELAY_MS) & 0xFF

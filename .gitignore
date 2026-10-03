@@ -10,8 +10,10 @@ dist/
 # Local environment created by uv
 .venv/
 
+# ESP32 Wi-Fi credentials
+src/gesturelight/wifi_secrets.h
+
 # Editor and operating-system files
 .vscode/
 .idea/
 .DS_Store
-

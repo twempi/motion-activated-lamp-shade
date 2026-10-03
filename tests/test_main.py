@@ -56,6 +56,67 @@ def test_invalid_command_line_configuration_has_an_argparse_error() -> None:
     assert error.value.code == 2
 
 
+def test_wifi_lamp_configuration_is_available_from_the_command_line() -> None:
+    config = parse_args(
+        [
+            "--esp32-url",
+            "http://192.168.1.50",
+            "--esp32-timeout",
+            "1.5",
+            "--pinch-distance-ratio",
+            "0.45",
+            "--brightness-step-ratio",
+            "0.5",
+        ]
+    )
+
+    assert config.lamp is not None
+    assert config.lamp.base_url == "http://192.168.1.50"
+    assert config.lamp.timeout_seconds == 1.5
+    assert config.gesture.pinch_distance_ratio == 0.45
+    assert config.gesture.brightness_step_ratio == 0.5
+
+
+def test_wifi_lamp_configuration_can_default_to_the_launcher_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GESTURELIGHT_ESP32_URL", "http://192.168.1.50")
+
+    config = parse_args([])
+
+    assert config.lamp is not None
+    assert config.lamp.base_url == "http://192.168.1.50"
+
+
+def test_command_line_esp32_url_overrides_the_launcher_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GESTURELIGHT_ESP32_URL", "http://192.168.1.50")
+
+    config = parse_args(["--esp32-url", "http://192.168.1.51"])
+
+    assert config.lamp is not None
+    assert config.lamp.base_url == "http://192.168.1.51"
+
+
+def test_camera_only_mode_ignores_the_launcher_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("GESTURELIGHT_ESP32_URL", "http://192.168.1.50")
+
+    config = parse_args(["--camera-only"])
+
+    assert config.camera_only
+    assert config.lamp is None
+
+
+def test_camera_only_mode_rejects_wifi_lamp_control() -> None:
+    with pytest.raises(SystemExit) as error:
+        parse_args(["--camera-only", "--esp32-url", "http://192.168.1.50"])
+
+    assert error.value.code == 2
+
+
 def test_frame_rate_meter_uses_elapsed_time_between_completed_frames() -> None:
     """A stable frame duration should yield a stable FPS value."""
     meter = FrameRateMeter()
@@ -87,6 +148,15 @@ def test_debug_lines_make_camera_only_mode_obvious() -> None:
     assert build_debug_lines(0.0, None) == (
         "FPS: 0.0",
         "Hand tracking: disabled (--camera-only)",
+    )
+
+
+def test_debug_lines_explain_the_power_gesture_when_lamp_control_is_enabled() -> None:
+    lines = build_debug_lines(30.0, HandTrackingResult(hands=()), lamp_control_enabled=True)
+
+    assert lines[-2:] == (
+        "Power: close fist, then open hand",
+        "Brightness: pinch thumb + index, move hand up/down",
     )
 
 

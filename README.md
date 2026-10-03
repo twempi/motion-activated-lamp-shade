@@ -1,14 +1,15 @@
-# GestureLight — hand-tracking foundation
+# GestureLight — hand tracking and lamp control
 
-GestureLight will eventually let hand gestures operate a physical desk lamp. This
-repository currently implements only the webcam and computer-vision foundation:
+GestureLight uses a webcam and MediaPipe hand landmarks to send lamp-button
+presses to an ESP32 over local Wi-Fi. Lamp control is opt-in: it activates only
+when the ESP32's URL is explicitly supplied.
 
 ```text
-Webcam -> OpenCV frames -> MediaPipe hand landmarks -> debug preview
+Webcam -> OpenCV frames -> MediaPipe hand landmarks -> gestures -> local Wi-Fi HTTP -> ESP32 -> lamp buttons
 ```
 
-It does **not** send MQTT messages, communicate with an ESP32, control relays,
-or classify gestures yet.
+Close a fist and open it to press the power button. Touch thumb and index
+finger together, then move the hand up or down to adjust brightness.
 
 ## What it does
 
@@ -18,6 +19,8 @@ or classify gestures yet.
   landmarks for every detected hand.
 - Draws a landmark skeleton over the webcam preview.
 - Shows FPS, hand count/detection state, and handedness in the preview.
+- With `--esp32-url`, sends ESP32 power and brightness button commands for
+  the configured hand gestures.
 - Exits cleanly when `q` or `Escape` is pressed.
 - Logs camera, model-initialization, frame-capture, and detection-state events
   without logging every frame.
@@ -29,18 +32,21 @@ or classify gestures yet.
 ├── src/gesturelight/
 │   ├── __init__.py
 │   ├── camera.py        # Webcam configuration, capture, and cleanup
+│   ├── gesture_classifier.py # Rendering-free hand gesture classifier
 │   ├── hand_tracker.py  # MediaPipe model, landmark data, and drawing
-│   └── main.py          # CLI, preview loop, FPS/debug UI, keyboard controls
+│   ├── lamp_controller.py # Local-Wi-Fi HTTP connection to the ESP32
+│   ├── main.py          # CLI, preview loop, FPS/debug UI, keyboard controls
+│   ├── gesturelight.ino # ESP32 button-pulse firmware
+│   └── wifi_secrets.example.h # Template for local Wi-Fi credentials
 ├── tests/               # No physical webcam required
 ├── pyproject.toml       # Python package and dependency metadata
 ├── uv.lock              # Locked Python dependencies
-├── flake.nix            # NixOS development shell
+├── flake.nix            # Nix development shell and installable desktop app
 └── flake.lock           # Locked Nixpkgs revision
 ```
 
-The split is intentional: a future `gesture_classifier.py` can consume the
-data returned by `HandTracker.process()` without owning a webcam or depending
-on OpenCV drawing calls.
+The gesture classifier consumes the data returned by `HandTracker.process()`;
+it does not depend on OpenCV drawing functions or MediaPipe protobuf objects.
 
 ## Landmark data API
 
@@ -63,11 +69,58 @@ coordinates are derived for the current frame and clamped to its bounds for
 safe OpenCV drawing. `z` is MediaPipe's relative depth estimate; it is not a
 pixel distance.
 
+## Install as a desktop application
+
+The flake packages the locked Python environment, its required Linux runtime
+libraries, a `gesturelight-hand-tracker` command, and a `GestureLight` desktop
+entry. It is currently available for **x86_64 Linux** only: the pinned
+MediaPipe 0.10.21 release supplies the required classic Hands API wheel for
+that platform but not Linux ARM.
+
+From this repository, install it into your user profile:
+
+```bash
+nix profile install path:.#gesturelight
+```
+
+Nix flakes use Git-tracked files when the project is a Git checkout. If you
+have created new source files locally, add or commit them before this command
+so they are included in the package.
+
+After the profile is active, search your desktop's application launcher for
+`GestureLight`. You can also launch it from a terminal with either command:
+
+```bash
+gesturelight-hand-tracker
+nix run path:.#gesturelight
+```
+
+The app launcher cannot know your ESP32's private LAN address. To make its
+normal launch control the lamp, set this environment variable in your desktop
+session (for example through your NixOS or Home Manager configuration), then
+log out and back in:
+
+```nix
+environment.sessionVariables.GESTURELIGHT_ESP32_URL = "http://192.168.1.50";
+```
+
+`--esp32-url` overrides that setting for an individual terminal launch. Leave
+the variable unset if you want the desktop entry to start tracking only.
+
+To install the package system-wide from a flake-based NixOS configuration,
+add this repository as an input and include:
+
+```nix
+environment.systemPackages = [
+  inputs.gesturelight.packages.${pkgs.system}.gesturelight
+];
+```
+
 ## Dependencies and NixOS setup
 
 The development shell supplies CPython 3.11, `uv`, and native GUI/runtime
 libraries. `uv` creates a local `.venv` and installs the Python wheels pinned
-in `uv.lock`.
+in `uv.lock`. ESP32 communication uses Python's standard-library HTTP client.
 
 This mixed approach is deliberate: at the Nixpkgs revision pinned by this
 project, the required classic MediaPipe Hands Python API is not available as a
@@ -101,6 +154,19 @@ Start the full hand tracker:
 uv run gesturelight-hand-tracker
 ```
 
+To control the ESP32-connected lamp, first configure and upload the Wi-Fi
+firmware described below. Then power the board from any suitable USB power
+supply; it does not need a data connection to the computer. The computer and
+ESP32 must be on the same trusted local network.
+Classic ESP32 boards require a 2.4 GHz Wi-Fi SSID.
+
+```bash
+uv run gesturelight-hand-tracker --esp32-url http://192.168.1.50
+```
+
+The preview describes both hand controls. The application sends button pulses,
+so it cannot know the lamp's current on/off state independently.
+
 Start the webcam-only diagnostic first if you want to isolate capture and GUI
 from MediaPipe:
 
@@ -122,12 +188,47 @@ uv run gesturelight-hand-tracker --no-mirror
 
 # Inspect model/camera details in the terminal
 uv run gesturelight-hand-tracker --log-level DEBUG
+
+# Loosen the intentionally tight touch threshold only if needed
+uv run gesturelight-hand-tracker --esp32-url http://192.168.1.50 --pinch-distance-ratio 0.20
+
+# Require more or less vertical movement for each brightness button press
+uv run gesturelight-hand-tracker --esp32-url http://192.168.1.50 --brightness-step-ratio 0.50
 ```
 
 Default settings are camera index `0`, requested resolution `1280x720`, up to
-`2` hands, and `0.50` detection/tracking confidence. The webcam driver may
-choose a nearby supported resolution or frame rate; the actual values are
-logged on startup.
+`2` hands, `0.50` detection/tracking confidence, a `0.15` pinch-to-palm-size
+ratio, a `0.15` palm-size brightness movement per press, and a one-second HTTP
+timeout for an ESP32 connection. The webcam driver may choose a nearby supported
+resolution or frame rate; the actual values are logged on startup. `--camera-only`
+cannot be combined with `--esp32-url`.
+
+## ESP32 firmware and wiring
+
+[`src/gesturelight/gesturelight.ino`](src/gesturelight/gesturelight.ino)
+maps local Wi-Fi commands and button outputs as follows:
+
+| HTTP `command` value | Action | ESP32 GPIO |
+| --- | --- | --- |
+| `p` | Power-button pulse | 16 |
+| `d` | Brightness-down pulse | 17 |
+| `u` | Brightness-up pulse | 18 |
+
+Before uploading, copy the template beside the sketch and replace the Wi-Fi
+placeholders. The local `wifi_secrets.h` file is deliberately ignored by Git.
+
+```bash
+cp src/gesturelight/wifi_secrets.example.h src/gesturelight/wifi_secrets.h
+```
+
+Upload the sketch over USB once, open its 115200-baud serial monitor, and note
+the printed `http://...` address. Reserve that address in the router if
+possible, then use it with `--esp32-url`; after that, the board only needs USB
+power. GestureLight verifies `/health` at startup and uses `POST /command`
+requests for button pulses.
+
+The ESP32 accepts commands from any device on its LAN. Use this only on your
+trusted home network—not a guest or shared network.
 
 ## Controls
 
@@ -135,6 +236,21 @@ logged on startup.
 | --- | --- |
 | `q` | Quit cleanly |
 | `Escape` | Quit cleanly |
+
+## Gesture control
+
+In Wi-Fi-control mode:
+
+- Power: hold a fully closed fist briefly, then open all four fingers. This
+  sends one `p` button press and requires another fist before it can fire
+  again. A recent brightness pinch temporarily blocks this gesture so tracking
+  noise cannot toggle the lamp.
+- Brightness: touch thumb and index finger together, then move the hand up for
+  `u` or down for `d`. One button press is sent for each movement of roughly
+  one-sixth of your palm size; release the pinch to stop brightness control.
+
+The pinch uses normalized 3D landmark distance relative to palm size, so it
+rejects fingers that are merely close or overlap in the camera view.
 
 ## Diagnostics and troubleshooting
 
@@ -147,6 +263,9 @@ The terminal log helps localize a problem:
 | Webcam-only mode works, full mode fails at startup | MediaPipe/dependencies | In the Nix shell, run `uv sync --extra dev` again and inspect `--log-level DEBUG`. |
 | Preview works but no landmarks appear | Detection | Use even lighting, show one open hand clearly, and try moving closer/farther from the camera. |
 | Landmarks appear but lag | Processing rate | Try `--width 640 --height 480` or `--model-complexity 0`. |
+| `Could not reach ESP32 ...` | Wi-Fi | Check that the board has power, both devices use the same LAN, and the URL is still correct. |
+| Touches do not trigger | Gesture calibration | Keep the hand fully in view; try `--pinch-distance-ratio 0.20`. |
+| Brightness changes too quickly or slowly | Gesture calibration | Increase or decrease `--brightness-step-ratio` respectively. |
 
 On many Linux systems webcam permissions come from membership in the `video`
 group. Check `groups` and re-login after an administrator changes group
@@ -161,13 +280,13 @@ end-to-end tuning than a detector-only timing number.
 Run the hardware-free test suite and linter from the Nix shell:
 
 ```bash
-uv run pytest
-uv run ruff check .
+uv run --extra dev pytest
+uv run --extra dev ruff check .
 ```
 
-The tests use fake camera objects and a synthetic blank BGR image. They do not
-open a real webcam. The MediaPipe smoke test verifies that the pinned model API
-can initialize and process that synthetic frame.
+The tests use fake camera and HTTP objects plus a synthetic blank BGR image.
+They do not open a real webcam or contact an ESP32. The MediaPipe smoke test
+verifies that the pinned model API can initialize and process that synthetic frame.
 
 ## Manual validation procedure
 
@@ -195,14 +314,23 @@ window. Run this once on the target development machine:
    that the camera and tracker were released.
 9. Start a different camera application to confirm the webcam is no longer
    held by GestureLight.
+10. With the lamp in a safe state, configure `wifi_secrets.h`, upload the
+    firmware over USB once, and confirm the serial monitor prints its local
+    HTTP URL. Disconnect its USB data cable and power the ESP32 from a USB
+    power supply.
+11. Run `uv run gesturelight-hand-tracker --esp32-url http://192.168.1.50`,
+    using the address printed by the board.
+12. Hold a fully closed fist briefly, then open all four fingers. Confirm the
+    lamp toggles once; keep the hand open to confirm it does not repeat. Close
+    the fist and open it again to confirm one further pulse.
+13. Touch thumb and index finger together, then move the hand up. Confirm one
+    or more `BRIGHTNESS UP` pulses as the hand moves. Repeat moving down and
+    confirm `BRIGHTNESS DOWN` pulses. Release the pinch and confirm movement
+    alone does not change brightness.
 
 ## Current scope and next step
 
-This stage is **hand tracking only**. It deliberately contains no gesture
-classification, MQTT, ESP32 communication, relay logic, networking, or lamp
-control.
-
-After tracking is reliable across your intended lighting and camera placement,
-the logical next step is a separate `gesture_classifier.py`. It should consume
-`HandTrackingResult`, define a small set of gestures, and add temporal
-stability/debouncing before any hardware integration is considered.
+This stage supports local-Wi-Fi power and brightness gestures using an open
+HTTP endpoint on the ESP32. It does not add MQTT, cloud access,
+automatic device discovery, or lamp-state sensing. Manual validation remains
+necessary across the intended lighting and camera placement.
