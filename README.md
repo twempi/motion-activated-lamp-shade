@@ -41,7 +41,7 @@ finger together, then move the hand up or down to adjust brightness.
 ├── tests/               # No physical webcam required
 ├── pyproject.toml       # Python package and dependency metadata
 ├── uv.lock              # Locked Python dependencies
-├── flake.nix            # Nix development shell and installable desktop app
+├── flake.nix            # Nix development shell, app package, and NixOS module
 └── flake.lock           # Locked Nixpkgs revision
 ```
 
@@ -95,26 +95,37 @@ gesturelight-hand-tracker
 nix run path:.#gesturelight
 ```
 
-The app launcher cannot know your ESP32's private LAN address. To make its
-normal launch control the lamp, set this environment variable in your desktop
-session (for example through your NixOS or Home Manager configuration), then
-log out and back in:
+For a profile-only install, supply the ESP32 address with `--esp32-url` when
+launching from a terminal. To configure the launcher too, use the NixOS module
+below.
+
+## Configure through a NixOS flake
+
+Add this project as an input to your system flake:
 
 ```nix
-environment.sessionVariables.GESTURELIGHT_ESP32_URL = "http://192.168.1.50";
+inputs.gesturelight.url = "path:/home/edward/Documents/projects/lamp-shade";
 ```
 
-`--esp32-url` overrides that setting for an individual terminal launch. Leave
-the variable unset if you want the desktop entry to start tracking only.
-
-To install the package system-wide from a flake-based NixOS configuration,
-add this repository as an input and include:
+Then import its module in the `modules` list for your NixOS configuration and
+configure it directly:
 
 ```nix
-environment.systemPackages = [
-  inputs.gesturelight.packages.${pkgs.system}.gesturelight
+modules = [
+  inputs.gesturelight.nixosModules.default
+  {
+    gesturelight = {
+      enable = true;
+      url = "192.168.1.50";
+    };
+  }
 ];
 ```
+
+The module installs GestureLight and creates a launcher-specific wrapper with
+the URL set from `gesturelight.url`; it does not set a global session variable.
+Use an `http://` prefix yourself only when you want to include one explicitly.
+Rebuild your system after changing the option.
 
 ## Dependencies and NixOS setup
 

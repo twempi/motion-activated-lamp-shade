@@ -166,5 +166,64 @@
             meta.description = "GestureLight webcam hand-tracking and local lamp-control app";
           };
         });
+
+      nixosModules =
+        let
+          gesturelightModule = { config, lib, pkgs, ... }:
+            let
+              cfg = config.gesturelight;
+              basePackage = self.packages.${pkgs.system}.gesturelight;
+              configuredUrl =
+                if cfg.url == null then
+                  null
+                else if lib.hasPrefix "http://" cfg.url then
+                  cfg.url
+                else
+                  "http://${cfg.url}";
+              configuredPackage = pkgs.runCommand "gesturelight-configured" {
+                nativeBuildInputs = [ pkgs.makeWrapper ];
+              } ''
+                mkdir -p "$out/bin" "$out/share/applications"
+                makeWrapper ${basePackage}/bin/gesturelight-hand-tracker \
+                  "$out/bin/gesturelight-hand-tracker" \
+                  --set GESTURELIGHT_ESP32_URL ${lib.escapeShellArg configuredUrl}
+                cp ${basePackage}/share/applications/gesturelight.desktop \
+                  "$out/share/applications/gesturelight.desktop"
+                substituteInPlace "$out/share/applications/gesturelight.desktop" \
+                  --replace-fail ${lib.escapeShellArg "${basePackage}/bin/gesturelight-hand-tracker"} \
+                  "$out/bin/gesturelight-hand-tracker"
+              '';
+            in
+            {
+              options.gesturelight = {
+                enable = lib.mkEnableOption "GestureLight webcam lamp control";
+                url = lib.mkOption {
+                  type = lib.types.nullOr lib.types.str;
+                  default = null;
+                  example = "192.168.1.50";
+                  description = ''
+                    ESP32 IP address or hostname, optionally with a port. The module
+                    adds the required http:// prefix when it is omitted.
+                  '';
+                };
+              };
+
+              config = lib.mkIf cfg.enable {
+                assertions = [
+                  {
+                    assertion = cfg.url != null && cfg.url != "";
+                    message = "gesturelight.url must be set when gesturelight.enable is true.";
+                  }
+                ];
+
+                environment.systemPackages =
+                  lib.optional (cfg.url != null && cfg.url != "") configuredPackage;
+              };
+            };
+        in
+        {
+          default = gesturelightModule;
+          gesturelight = gesturelightModule;
+        };
     };
 }
