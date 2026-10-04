@@ -111,9 +111,9 @@ is enabled.
 > Add the completed circuit diagram and schematic to `docs/`, then replace the
 > image paths below with their final filenames.
 
-![Completed GestureLight wiring diagram](docs/gesturelight-wiring-diagram.png)
+![Completed GestureLight wiring diagram](fritzing/Diagram.png)
 
-![GestureLight circuit schematic](docs/gesturelight-schematic.png)
+![GestureLight circuit schematic](fritzing/Schematic.png)
 
 The diagrams above are the authoritative wiring reference for this build. Each
 PhotoMOS output is connected **in parallel** with one verified low-voltage
