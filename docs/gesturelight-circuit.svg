@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title description">
+  <title id="title">GestureLight three-channel isolated PhotoMOS circuit concept</title>
+  <desc id="description">GPIO 16, 17, and 18 each drive a PhotoMOS input LED through an approximately 330-ohm resistor. The corresponding isolated outputs connect in parallel across verified power, brightness-down, and brightness-up low-voltage lamp-button contacts. ESP32 ground returns only to the relay input LEDs.</desc>
+  <style>
+    .title { font: 700 28px sans-serif; fill: #102a43; }
+    .subtitle { font: 500 16px sans-serif; fill: #486581; }
+    .section { font: 700 20px sans-serif; fill: #102a43; }
+    .label { font: 600 15px sans-serif; fill: #102a43; }
+    .small { font: 14px sans-serif; fill: #243b53; }
+    .tiny { font: 12px sans-serif; fill: #486581; }
+    .wire { fill: none; stroke: #1f7a8c; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .return { fill: none; stroke: #5c6b73; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .lampwire { fill: none; stroke: #7c3aed; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    .device { fill: #f0f4f8; stroke: #486581; stroke-width: 2; }
+    .relay { fill: #fff7ed; stroke: #c2410c; stroke-width: 2; }
+    .lamp { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+    .notice { fill: #fffbea; stroke: #d69e2e; stroke-width: 2; }
+  </style>
+
+  <rect width="1440" height="900" fill="#ffffff"/>
+  <text x="720" y="48" text-anchor="middle" class="title">GestureLight: three isolated virtual-button channels</text>
+  <text x="720" y="76" text-anchor="middle" class="subtitle">Conceptual wiring only — verify the relay datasheet and the target lamp's unpowered button contacts before assembly.</text>
+
+  <rect x="28" y="110" width="598" height="710" rx="16" fill="#f0fdfa" stroke="#1f7a8c" stroke-width="2"/>
+  <rect x="814" y="110" width="598" height="710" rx="16" fill="#faf5ff" stroke="#7c3aed" stroke-width="2"/>
+  <text x="54" y="145" class="section">ESP32 / control side</text>
+  <text x="840" y="145" class="section">Lamp controller / isolated low-voltage side</text>
+
+  <line x1="720" y1="110" x2="720" y2="820" stroke="#c2410c" stroke-width="3" stroke-dasharray="10 10"/>
+  <rect x="638" y="96" width="164" height="40" rx="18" class="notice"/>
+  <text x="720" y="122" text-anchor="middle" class="label">GALVANIC ISOLATION</text>
+  <text x="720" y="792" text-anchor="middle" class="small">No ESP32 GND connection to lamp controller</text>
+
+  <rect x="66" y="221" width="190" height="445" rx="18" class="device"/>
+  <text x="161" y="258" text-anchor="middle" class="label">ESP32</text>
+  <text x="161" y="283" text-anchor="middle" class="small">USB-powered control board</text>
+  <circle cx="256" cy="325" r="6" fill="#1f7a8c"/>
+  <circle cx="256" cy="435" r="6" fill="#1f7a8c"/>
+  <circle cx="256" cy="545" r="6" fill="#1f7a8c"/>
+  <circle cx="256" cy="630" r="6" fill="#5c6b73"/>
+  <text x="88" y="330" class="label">GPIO 16</text>
+  <text x="88" y="440" class="label">GPIO 17</text>
+  <text x="88" y="550" class="label">GPIO 18</text>
+  <text x="88" y="635" class="label">GND</text>
+  <text x="88" y="352" class="tiny">power</text>
+  <text x="88" y="462" class="tiny">brightness down</text>
+  <text x="88" y="572" class="tiny">brightness up</text>
+
+  <!-- Channel 1: ESP32 input -->
+  <line x1="262" y1="325" x2="326" y2="325" class="wire"/>
+  <polyline points="326,325 336,313 346,337 356,313 366,337 376,313 386,337 396,325" class="wire"/>
+  <text x="360" y="300" text-anchor="middle" class="small">~330 Ω</text>
+  <line x1="396" y1="325" x2="442" y2="325" class="wire"/>
+  <rect x="442" y="276" width="184" height="98" rx="10" class="relay"/>
+  <text x="534" y="302" text-anchor="middle" class="label">AQY212EH #1</text>
+  <text x="534" y="324" text-anchor="middle" class="small">input LED</text>
+  <polygon points="486,340 506,325 486,310" fill="none" stroke="#c2410c" stroke-width="2"/>
+  <line x1="510" y1="309" x2="510" y2="341" stroke="#c2410c" stroke-width="2"/>
+  <text x="534" y="356" text-anchor="middle" class="tiny">anode → cathode</text>
+  <line x1="510" y1="341" x2="510" y2="660" class="return"/>
+
+  <!-- Channel 2: ESP32 input -->
+  <line x1="262" y1="435" x2="326" y2="435" class="wire"/>
+  <polyline points="326,435 336,423 346,447 356,423 366,447 376,423 386,447 396,435" class="wire"/>
+  <text x="360" y="410" text-anchor="middle" class="small">~330 Ω</text>
+  <line x1="396" y1="435" x2="442" y2="435" class="wire"/>
+  <rect x="442" y="386" width="184" height="98" rx="10" class="relay"/>
+  <text x="534" y="412" text-anchor="middle" class="label">AQY212EH #2</text>
+  <text x="534" y="434" text-anchor="middle" class="small">input LED</text>
+  <polygon points="486,450 506,435 486,420" fill="none" stroke="#c2410c" stroke-width="2"/>
+  <line x1="510" y1="419" x2="510" y2="451" stroke="#c2410c" stroke-width="2"/>
+  <text x="534" y="466" text-anchor="middle" class="tiny">anode → cathode</text>
+  <line x1="510" y1="451" x2="510" y2="660" class="return"/>
+
+  <!-- Channel 3: ESP32 input -->
+  <line x1="262" y1="545" x2="326" y2="545" class="wire"/>
+  <polyline points="326,545 336,533 346,557 356,533 366,557 376,533 386,557 396,545" class="wire"/>
+  <text x="360" y="520" text-anchor="middle" class="small">~330 Ω</text>
+  <line x1="396" y1="545" x2="442" y2="545" class="wire"/>
+  <rect x="442" y="496" width="184" height="98" rx="10" class="relay"/>
+  <text x="534" y="522" text-anchor="middle" class="label">AQY212EH #3</text>
+  <text x="534" y="544" text-anchor="middle" class="small">input LED</text>
+  <polygon points="486,560 506,545 486,530" fill="none" stroke="#c2410c" stroke-width="2"/>
+  <line x1="510" y1="529" x2="510" y2="561" stroke="#c2410c" stroke-width="2"/>
+  <text x="534" y="576" text-anchor="middle" class="tiny">anode → cathode</text>
+  <line x1="510" y1="561" x2="510" y2="660" class="return"/>
+
+  <line x1="510" y1="660" x2="256" y2="660" class="return"/>
+  <line x1="256" y1="660" x2="256" y2="636" class="return"/>
+  <text x="405" y="690" class="small">input-LED returns only</text>
+
+  <!-- Channel 1: isolated output across existing POWER switch -->
+  <rect x="838" y="252" width="184" height="146" rx="10" class="relay"/>
+  <text x="930" y="280" text-anchor="middle" class="label">AQY212EH #1</text>
+  <text x="930" y="303" text-anchor="middle" class="small">isolated output</text>
+  <text x="930" y="348" text-anchor="middle" class="tiny">two output terminals</text>
+  <circle cx="1022" cy="320" r="6" fill="#c2410c"/>
+  <circle cx="1022" cy="356" r="6" fill="#c2410c"/>
+  <rect x="1080" y="278" width="282" height="120" rx="10" class="lamp"/>
+  <text x="1221" y="307" text-anchor="middle" class="label">Existing POWER tactile switch</text>
+  <circle cx="1152" cy="338" r="8" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+  <circle cx="1290" cy="338" r="8" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+  <polyline points="1028,320 1152,320 1152,330" class="lampwire"/>
+  <polyline points="1028,356 1290,356 1290,346" class="lampwire"/>
+  <line x1="1162" y1="338" x2="1278" y2="338" stroke="#7c3aed" stroke-width="3" stroke-dasharray="7 6"/>
+  <text x="1221" y="376" text-anchor="middle" class="tiny">PhotoMOS output is in parallel across verified contacts</text>
+
+  <!-- Channel 2: isolated output across existing BRIGHTNESS DOWN switch -->
+  <rect x="838" y="430" width="184" height="146" rx="10" class="relay"/>
+  <text x="930" y="458" text-anchor="middle" class="label">AQY212EH #2</text>
+  <text x="930" y="481" text-anchor="middle" class="small">isolated output</text>
+  <text x="930" y="526" text-anchor="middle" class="tiny">two output terminals</text>
+  <circle cx="1022" cy="498" r="6" fill="#c2410c"/>
+  <circle cx="1022" cy="534" r="6" fill="#c2410c"/>
+  <rect x="1080" y="456" width="282" height="120" rx="10" class="lamp"/>
+  <text x="1221" y="485" text-anchor="middle" class="label">Existing BRIGHTNESS DOWN switch</text>
+  <circle cx="1152" cy="516" r="8" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+  <circle cx="1290" cy="516" r="8" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+  <polyline points="1028,498 1152,498 1152,508" class="lampwire"/>
+  <polyline points="1028,534 1290,534 1290,524" class="lampwire"/>
+  <line x1="1162" y1="516" x2="1278" y2="516" stroke="#7c3aed" stroke-width="3" stroke-dasharray="7 6"/>
+  <text x="1221" y="554" text-anchor="middle" class="tiny">PhotoMOS output is in parallel across verified contacts</text>
+
+  <!-- Channel 3: isolated output across existing BRIGHTNESS UP switch -->
+  <rect x="838" y="608" width="184" height="146" rx="10" class="relay"/>
+  <text x="930" y="636" text-anchor="middle" class="label">AQY212EH #3</text>
+  <text x="930" y="659" text-anchor="middle" class="small">isolated output</text>
+  <text x="930" y="704" text-anchor="middle" class="tiny">two output terminals</text>
+  <circle cx="1022" cy="676" r="6" fill="#c2410c"/>
+  <circle cx="1022" cy="712" r="6" fill="#c2410c"/>
+  <rect x="1080" y="634" width="282" height="120" rx="10" class="lamp"/>
+  <text x="1221" y="663" text-anchor="middle" class="label">Existing BRIGHTNESS UP switch</text>
+  <circle cx="1152" cy="694" r="8" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+  <circle cx="1290" cy="694" r="8" fill="#fff" stroke="#7c3aed" stroke-width="3"/>
+  <polyline points="1028,676 1152,676 1152,686" class="lampwire"/>
+  <polyline points="1028,712 1290,712 1290,702" class="lampwire"/>
+  <line x1="1162" y1="694" x2="1278" y2="694" stroke="#7c3aed" stroke-width="3" stroke-dasharray="7 6"/>
+  <text x="1221" y="732" text-anchor="middle" class="tiny">PhotoMOS output is in parallel across verified contacts</text>
+
+  <text x="47" y="853" class="tiny">Firmware pulse: GPIO HIGH for 200 ms, then LOW. The lamp and ESP32 retain independent power supplies.</text>
+</svg>
